@@ -1,0 +1,43 @@
+name: Build payload
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    env:
+      PS5_PAYLOAD_SDK: ${{ github.workspace }}/ps5-payload-sdk
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y build-essential binutils clang-18 lld-18 curl unzip xxd
+
+      - name: Download PS5 Payload SDK
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 \
+            https://github.com/ps5-payload-dev/sdk/releases/latest/download/ps5-payload-sdk.zip \
+            --output "$RUNNER_TEMP/ps5-payload-sdk.zip"
+          unzip -q "$RUNNER_TEMP/ps5-payload-sdk.zip" -d "$GITHUB_WORKSPACE"
+          test -f "$PS5_PAYLOAD_SDK/toolchain/prospero.mk"
+
+      - name: Build payload
+        run: make
+
+      - name: Upload ELF
+        uses: actions/upload-artifact@v4
+        with:
+          name: byepervisor-reborn
+          path: byepervisor_reborn.elf
