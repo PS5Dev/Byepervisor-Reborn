@@ -8,6 +8,7 @@ Very similarly to (one version of) [byepervisor of old](https://github.com/PS5De
 
 Currently only the following firmwares are fully supported:
 
+- 11.60 (regular/non-Pro console; hardware validated)
 - 13.60
 - 13.20
 - 13.00 (untested)
@@ -29,11 +30,20 @@ However this bug should technically be exploitable as low as 6.xx. With modifica
     - `0x062800000` PA for non-pro units
     - `0x8E0800000` PA for pro units
   - Open an issue if the payload mis-identifies what your system is, and note the hex value printed in brackets in the notification
+- The 11.60 port currently refuses to run on PS5 Pro. Its guarded VMCB discovery
+  has been validated against the regular console's hypervisor physical layout;
+  the Pro range must be surveyed before enabling writes there.
 - If the system shuts down when resuming from rest mode, it means the exploit failed
   - If it failed, likely there's something wrong with the payload and your situation is not supported, this exploit should be 99.9% stable
 
 ## Build notes
 This exploit payload is built using the [PS5-Payload-Dev SDK](https://github.com/ps5-payload-dev/sdk). Note also that the build for `break_hv_payload/` is slightly special, as it gets compiled to a flat binary of minimal size. The entirety of code in `break_hv_payload/` runs in supervisor/kernel mode.
+
+The AP payload uses host-side x86-64 tools rather than the PS5 target compiler.
+Override `HV_CC`, `HV_LD`, and `HV_OBJCOPY` if those tools are not available as
+`gcc`, `ld`, and `objcopy`. Run `make audit-11.60` after building to check its
+staging size, embedding count, privileged-opcode denylist, and guarded write
+call sites.
 
 ## Adding firmware support
 To add support for a different firmware, the main thing that needs to be added is the header file in `include/offsets/`. This includes all the kernel offsets that are needed.
@@ -45,7 +55,12 @@ Once the offsets have been added, the following functions need to be modified to
 
 Some firmwares might require more extensive modifications if gadgets don't exist for them. 6.xx for example likely will not have some gadgets that are used on 13.xx.
 
+11.60 is one such case: it has no usable `pop r8` gadget in kernel `.text`, so
+the hook's qword-store primitive uses the equivalent `pop rax; mov [rcx], rax`
+sequence. It also cannot use the 13.x hypervisor heap/pcpus globals during the
+startup AP window, so the port uses guarded runtime VMCB discovery instead.
+
 ## How to use
 1. Run kernel exploit chain and get to elfldr
-2. Send `byepervisor.elf`
+2. Send `byepervisor_reborn.elf`
 3. Follow the directions of the notifications

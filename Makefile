@@ -28,7 +28,7 @@ ELF := byepervisor_reborn.elf
 PAYLOAD_DIR := break_hv_payload
 PAYLOAD_HDR := $(PAYLOAD_DIR)/break_hv.h
 
-CFLAGS := -Wall -Werror -Wno-unused-function -g -I./include
+CFLAGS := -Wall -Werror -Wno-unused-function -g -O0 -I./include
 
 all: $(ELF)
 
@@ -53,3 +53,6 @@ debug: $(ELF)
 	-ex "remote put $(ELF) /data/$(ELF)" \
 	-ex "set remote exec-file /data/$(ELF)" \
 	-ex "start"
+
+audit-11.60: $(ELF)
+	python3 scripts/audit_11_60.py --objdump "$${OBJDUMP:-llvm-objdump}"

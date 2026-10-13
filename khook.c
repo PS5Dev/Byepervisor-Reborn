@@ -74,11 +74,13 @@ int kh_chain_g(kh_chain_t *chain, kgadget_t gadget)
 
 int kh_chain_store(kh_chain_t *chain, uint64_t kaddr, uint64_t val)
 {
+  /* POP_RAX/ST_RCX_RAX is available on every supported firmware and avoids
+   * requiring a POP_R8 gadget, which 11.60 does not have in kernel .text. */
   kh_chain_g(chain, KERNEL_GADGET_POP_RCX);
   kh_chain_q(chain, kaddr);
-  kh_chain_g(chain, KERNEL_GADGET_POP_R8);
+  kh_chain_g(chain, KERNEL_GADGET_POP_RAX);
   kh_chain_q(chain, val);
-  kh_chain_g(chain, KERNEL_GADGET_STORE_RCX_R8);
+  kh_chain_g(chain, KERNEL_GADGET_ST_RCX_RAX);
   return chain && !chain->err ? 0 : -1;
 }
 
@@ -252,9 +254,9 @@ static size_t emit_resume_tail(khook_t *kh, uint8_t *buf, size_t off,
   if (kh->resume_rip) {
     off = putq(buf, off, kgadget(KERNEL_GADGET_POP_RCX));
     off = putq(buf, off, frame_base);
-    off = putq(buf, off, kgadget(KERNEL_GADGET_POP_R8));
+    off = putq(buf, off, kgadget(KERNEL_GADGET_POP_RAX));
     off = putq(buf, off, kh->resume_rip);
-    off = putq(buf, off, kgadget(KERNEL_GADGET_STORE_RCX_R8));
+    off = putq(buf, off, kgadget(KERNEL_GADGET_ST_RCX_RAX));
   }
 
   if (kh->oneshot) {
