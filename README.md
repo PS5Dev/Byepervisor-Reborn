@@ -8,7 +8,7 @@ Very similarly to (one version of) [byepervisor of old](https://github.com/PS5De
 
 The following firmware paths are available:
 
-- 12.70 (launch model only; combined ELF awaits a console run)
+- 12.70 (tested on launch model only)
 - 13.60
 - 13.20
 - 13.00 (untested)
