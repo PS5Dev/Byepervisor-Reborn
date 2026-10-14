@@ -126,6 +126,10 @@ uint64_t find_pde(uint64_t pmap, uint64_t va, uint64_t *out_pde)
   if (find_pdpe(pmap, va, &pd_table_pdp_entry) == 0xFFFFFFFFFFFFFFFFull) {
     return 0xFFFFFFFFFFFFFFFFull;
   }
+  if (!(pd_table_pdp_entry & (1ULL << PDE_PRESENT)) ||
+      PDE_FIELD(pd_table_pdp_entry, PS)) {
+    return 0xFFFFFFFFFFFFFFFFull;
+  }
 
   // Calculate pd entry via index encoded in virtual addr
   pd_table_dmap_addr      = kdldmap(PDE_ADDR(pd_table_pdp_entry));
@@ -146,6 +150,10 @@ uint64_t find_pte(uint64_t pmap, uint64_t va, uint64_t *out_pte)
 
   // Get page table address from pde entry
   if (find_pde(pmap, va, &page_table_pde_entry) == 0xFFFFFFFFFFFFFFFFull) {
+    return 0xFFFFFFFFFFFFFFFFull;
+  }
+  if (!(page_table_pde_entry & (1ULL << PDE_PRESENT)) ||
+      PDE_FIELD(page_table_pde_entry, PS)) {
     return 0xFFFFFFFFFFFFFFFFull;
   }
 
