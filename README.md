@@ -11,6 +11,7 @@ Currently only the following firmwares are fully supported:
 - 13.60
 - 13.20
 - 13.00 (untested)
+- 10.01 (regular console; PS5 Pro is not yet supported)
 
 However this bug should technically be exploitable as low as 6.xx. With modifications, it could work on 14.00 as well, but this is not provided here, especially since there is no public 14.00 kernel exploit anyways.
 

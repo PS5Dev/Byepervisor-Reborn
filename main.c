@@ -8,6 +8,7 @@
 #include <sys/syscall.h>
 
 #include "kdlsym.h"
+#include "fw_1001.h"
 #include "khook.h"
 #include "util.h"
 #include "paging.h"
@@ -194,6 +195,15 @@ int main(void)
 
   // We need system ucred to pin to core 0
   kernel_set_ucred_authid(getpid(), 0x4800000000000007);
+
+  /* 10.01 uses a separately qualified, fail-closed resume path. */
+  if ((fw & 0xffff0000U) == 0x10010000U) {
+    if (soc_id == 0x840fd0) {
+      notifyf("[ERROR] Byepervisor Reborn\n10.01 Pro is not supported\n");
+      return 1;
+    }
+    return run_fw_1001();
+  }
 
   cave   = kdlsym(KERNEL_SYM_DATA_CAVE);
   oracle = cave + KH_OFF_USER;

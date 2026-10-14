@@ -27,6 +27,8 @@ ELF := byepervisor_reborn.elf
 
 PAYLOAD_DIR := break_hv_payload
 PAYLOAD_HDR := $(PAYLOAD_DIR)/break_hv.h
+PAYLOAD_1001_DIR := break_hv_payload_1001
+PAYLOAD_1001_HDR := $(PAYLOAD_1001_DIR)/break_hv_1001.h
 
 CFLAGS := -Wall -Werror -Wno-unused-function -g -I./include
 
@@ -35,12 +37,16 @@ all: $(ELF)
 $(PAYLOAD_HDR): $(PAYLOAD_DIR)/break_hv.c $(PAYLOAD_DIR)/entry.S $(PAYLOAD_DIR)/link.ld
 	sh $(PAYLOAD_DIR)/build.sh
 
-$(ELF): $(PAYLOAD_HDR) main.c kdlsym.c khook.c paging.c util.c
+$(PAYLOAD_1001_HDR): $(PAYLOAD_1001_DIR)/break_hv.c $(PAYLOAD_1001_DIR)/entry.S $(PAYLOAD_1001_DIR)/link.ld
+	sh $(PAYLOAD_1001_DIR)/build.sh
+
+$(ELF): $(PAYLOAD_HDR) $(PAYLOAD_1001_HDR) main.c fw_1001.c fw_1001_textmap.c kdlsym.c khook.c paging.c util.c
 	$(CC) $(CFLAGS) -o $@ $(filter %.c,$^)
 
 clean:
 	rm -f $(ELF)
 	rm -f $(PAYLOAD_DIR)/break_hv.h $(PAYLOAD_DIR)/break_hv.bin $(PAYLOAD_DIR)/break_hv.elf $(PAYLOAD_DIR)/*.o
+	rm -f $(PAYLOAD_1001_DIR)/break_hv_1001.h $(PAYLOAD_1001_DIR)/break_hv_1001.bin $(PAYLOAD_1001_DIR)/break_hv_1001.elf $(PAYLOAD_1001_DIR)/*.o
 
 test: $(ELF)
 	$(PS5_DEPLOY) -h $(PS5_HOST) -p $(PS5_PORT) $^
