@@ -16,6 +16,7 @@
 
 PS5_HOST ?= ps5
 PS5_PORT ?= 9021
+KTEXT_1160 ?= ps5-11.60-ktext.bin
 
 ifdef PS5_PAYLOAD_SDK
     include $(PS5_PAYLOAD_SDK)/toolchain/prospero.mk
@@ -24,22 +25,63 @@ else
 endif
 
 ELF := byepervisor_reborn.elf
+ISSUE9_ELF := byepervisor_issue9_diag.elf
+ISSUE9_DR0_ELF := byepervisor_issue9_dr0_diag.elf
+ISSUE9_RESUME_ELF := byepervisor_issue9_resume_diag.elf
+ISSUE9_ABORT_ELF := byepervisor_issue9_resume_abort.elf
 
 PAYLOAD_DIR := break_hv_payload
 PAYLOAD_HDR := $(PAYLOAD_DIR)/break_hv.h
 
-CFLAGS := -Wall -Werror -Wno-unused-function -g -I./include
+CFLAGS := -Wall -Werror -Wno-unused-function -g -O0 -I./include
 
 all: $(ELF)
 
 $(PAYLOAD_HDR): $(PAYLOAD_DIR)/break_hv.c $(PAYLOAD_DIR)/entry.S $(PAYLOAD_DIR)/link.ld
 	sh $(PAYLOAD_DIR)/build.sh
 
-$(ELF): $(PAYLOAD_HDR) main.c kdlsym.c khook.c paging.c util.c
+$(ELF): $(PAYLOAD_HDR) main.c kdlsym.c khook.c paging.c util.c issue9_diag.c
 	$(CC) $(CFLAGS) -o $@ $(filter %.c,$^)
+
+issue9-diag: $(ISSUE9_ELF)
+
+issue9-dr0-diag: $(ISSUE9_DR0_ELF)
+
+audit-issue9-dr0: $(ISSUE9_DR0_ELF)
+	python3 scripts/audit_issue9_dr0.py $(ISSUE9_DR0_ELF) \
+		--objdump "$${OBJDUMP:-llvm-objdump}" \
+		--ktext "$(KTEXT_1160)"
+
+issue9-resume-diag: $(ISSUE9_RESUME_ELF)
+
+issue9-resume-abort: $(ISSUE9_ABORT_ELF)
+
+audit-issue9-resume: $(ISSUE9_RESUME_ELF)
+	python3 scripts/audit_issue9_resume.py $(ISSUE9_RESUME_ELF) \
+		--objdump "$${OBJDUMP:-llvm-objdump}" \
+		--ktext "$(KTEXT_1160)"
+
+audit-issue9: $(ISSUE9_ELF)
+	python3 scripts/audit_issue9_diag.py $(ISSUE9_ELF) --objdump "$${OBJDUMP:-llvm-objdump}"
+
+$(ISSUE9_ELF): $(PAYLOAD_HDR) main.c kdlsym.c khook.c paging.c util.c issue9_diag.c
+	$(CC) $(CFLAGS) -DISSUE9_DIAG=1 -o $@ $(filter %.c,$^)
+
+$(ISSUE9_DR0_ELF): $(PAYLOAD_HDR) main.c kdlsym.c khook.c paging.c util.c issue9_diag.c
+	$(CC) $(CFLAGS) -DISSUE9_DR0_DIAG=1 -o $@ $(filter %.c,$^)
+
+$(ISSUE9_RESUME_ELF): $(PAYLOAD_HDR) main.c kdlsym.c khook.c paging.c util.c issue9_diag.c
+	$(CC) $(CFLAGS) -DISSUE9_RESUME_DIAG=1 -o $@ $(filter %.c,$^)
+
+$(ISSUE9_ABORT_ELF): $(PAYLOAD_HDR) main.c kdlsym.c khook.c paging.c util.c issue9_diag.c
+	$(CC) $(CFLAGS) -DISSUE9_RESUME_ABORT=1 -o $@ $(filter %.c,$^)
 
 clean:
 	rm -f $(ELF)
+	rm -f $(ISSUE9_ELF)
+	rm -f $(ISSUE9_DR0_ELF)
+	rm -f $(ISSUE9_RESUME_ELF)
+	rm -f $(ISSUE9_ABORT_ELF)
 	rm -f $(PAYLOAD_DIR)/break_hv.h $(PAYLOAD_DIR)/break_hv.bin $(PAYLOAD_DIR)/break_hv.elf $(PAYLOAD_DIR)/*.o
 
 test: $(ELF)
@@ -53,3 +95,6 @@ debug: $(ELF)
 	-ex "remote put $(ELF) /data/$(ELF)" \
 	-ex "set remote exec-file /data/$(ELF)" \
 	-ex "start"
+
+audit-11.60: $(ELF)
+	python3 scripts/audit_11_60.py --objdump "$${OBJDUMP:-llvm-objdump}"
