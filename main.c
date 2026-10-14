@@ -11,6 +11,7 @@
 #include "khook.h"
 #include "util.h"
 #include "paging.h"
+#include "issue9_diag.h"
 
 #include "break_hv_payload/break_hv.h"
 
@@ -21,7 +22,7 @@
 #define CAVE_STATE_OFF            0x600
 #define CAVE_SAVE_OFF             0x620
 #define CAVE_PREP_OFF             0x680
-#define CAVE_STASH_OFF            0x2000
+#define CAVE_STASH_OFF            ISSUE9_PROD_STASH_OFF
 #define TSS_STRIDE                0x68
 #define STARTUP_MP_PAYLOAD_PAGE   0x3FFFF000
 
@@ -309,11 +310,14 @@ static int run_1160(uint64_t cave)
     return 2;
   }
 
-  if (kread64(cave + CAVE_STATE_OFF) == STATE_ARMED) {
+  if (issue9_production_is_armed(cave)) {
     if (result_1160_done(cave)) {
       print_result_1160(cave);
-      uninstall_hook(HOOK_CORE, cave);
-      printf("[11.60] hook restored\n");
+      if (issue9_production_cleanup(cave)) {
+        notifyf("[ERROR] Byepervisor Reborn 11.60\nHook cleanup failed");
+        return 6;
+      }
+      printf("[11.60] hardened hook restored\n");
       return prove_result_1160(cave);
     }
     printf("[11.60] resume hook is already armed\n");
@@ -331,8 +335,6 @@ static int run_1160(uint64_t cave)
 
   kwrite(oracle, zeroes, 8 * sizeof(uint64_t));
   kwrite(ext, zeroes, 10 * sizeof(uint64_t));
-  kwrite(cave + 0x1000, break_hv, break_hv_len);
-
   kernel_pmap = kdlsym(KERNEL_SYM_PMAP_STORE);
   kernel_pm_cr3 = kread64(kernel_pmap + 0x28);
   r = make_payload_page_executable(kernel_pmap);
@@ -346,7 +348,8 @@ static int run_1160(uint64_t cave)
   kwrite64(cave + CAVE_PREP_OFF, PREP_MARK);
   printf("[11.60] prepared %lu kernel page-table entries\n", changed);
 
-  r = install_resume_hook(HOOK_CORE, cave, kernel_pm_cr3);
+  r = issue9_production_arm(cave, kernel_pm_cr3, HV_LOADER_PA_REGULAR,
+                            break_hv, break_hv_len);
   if (r) {
     printf("[11.60] hook installation failed: %d\n", r);
     notifyf("[ERROR] Byepervisor Reborn 11.60\nHook install failed (%d)", r);
@@ -361,8 +364,11 @@ wait_for_resume:
     pin_to_core(HOOK_CORE);
     if (result_1160_done(cave)) {
       print_result_1160(cave);
-      uninstall_hook(HOOK_CORE, cave);
-      printf("[11.60] hook restored\n");
+      if (issue9_production_cleanup(cave)) {
+        notifyf("[ERROR] Byepervisor Reborn 11.60\nHook cleanup failed");
+        return 6;
+      }
+      printf("[11.60] hardened hook restored\n");
       return prove_result_1160(cave);
     }
     sceKernelSleep(2);
@@ -425,7 +431,23 @@ int main(void)
       notifyf("[ERROR] Byepervisor Reborn 11.60\nPS5 Pro is not yet validated");
       return 9;
     }
+#if defined(ISSUE9_DIAG) || defined(ISSUE9_DR0_DIAG) || defined(ISSUE9_RESUME_DIAG) || defined(ISSUE9_RESUME_ABORT)
+    if (pin_to_core(HOOK_CORE) != 0 || get_cpu_core() != 15) {
+      printf("[issue9] failed to pin scheduler CPU 15 / TSS index 0\n");
+      return 10;
+    }
+#if defined(ISSUE9_RESUME_ABORT)
+    return issue9_resume_abort_run(cave);
+#elif defined(ISSUE9_RESUME_DIAG)
+    return issue9_resume_diag_run(cave);
+#elif defined(ISSUE9_DR0_DIAG)
+    return issue9_dr0_diag_run(cave);
+#else
+    return issue9_diag_run(cave);
+#endif
+#else
     return run_1160(cave);
+#endif
   }
 
   pin_to_core(HOOK_CORE);
