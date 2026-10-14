@@ -60,6 +60,18 @@ the hook's qword-store primitive uses the equivalent `pop rax; mov [rcx], rax`
 sequence. It also cannot use the 13.x hypervisor heap/pcpus globals during the
 startup AP window, so the port uses guarded runtime VMCB discovery instead.
 
+### Porting guide and research tools
+
+For a complete stage-by-stage porting workflow, evidence rules, firmware
+manifests, bounded diagnostics, and offline analysis tools, see
+[PS5 Hypervisor Bypass Porting](https://github.com/gzimbric/ps5-hv-bypass-porting).
+
+That repository documents the work beyond a basic offset-table edit, including
+ports without readable kernel text, per-core debug-hook requirements, gadget
+validation, cave persistence testing, runtime VMCB discovery, and exact stop
+conditions before hypervisor writes are enabled. It does not contain firmware,
+kernel or hypervisor dumps, console keys, or prebuilt production payloads.
+
 ## How to use
 1. Run kernel exploit chain and get to elfldr
 2. Send `byepervisor_reborn.elf`
