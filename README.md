@@ -46,6 +46,8 @@ make PS5_PAYLOAD_SDK=/path/to/ps5-payload-sdk
 
 The 12.70 path was exercised as a standalone ELF on one launch-model PS5 with firmware 12.70, Relapse, and elfldr. One complete rest/resume run returned to the home screen and displayed the first eight kernel text bytes (`e8 5b c5 58 00 00 00 00`). Its USB result recorded 16 AP VMCBs processed, all 342 planned text-map leaves verified, and a successful kernel text read. The number of leaves changes with KASLR; 853 was also observed on the same console in an earlier boot. The combined ELF builds successfully but still needs a console run.
 
+The 12.70 hook now prepares isolated IST6 fallback paths for all 16 CPUs before publishing its shared debug gate. This hardening builds and passes host checks, but has not yet had a 12.70 console run. `make census_1270.elf` builds a read-only TSS, IDT, and cave preflight for that first validation.
+
 A writable USB drive at `/mnt/usb0` is optional. When available, the 12.70 path saves a detailed resume log there. Without it, the payload continues and reports the result through its notification and kernel log.
 
 This path rejects firmware or SoC mismatches, unexpected page-table layouts, and dirty data-cave state before arming the resume hook. It leaves kernel text readable and writable after resume. It has not been tested on Slim or Pro hardware, and does not boot Linux or include kernel patches. See [PORT_12_70.md](PORT_12_70.md) for the implementation and test boundary.

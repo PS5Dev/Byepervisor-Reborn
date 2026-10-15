@@ -36,6 +36,12 @@ typedef int (*kh_write_fn)(uint64_t kaddr, const void *src, size_t len);
 #define KH_SCRATCH_BIG     0x4000
 #define KH_OFF_BIG_CHAIN   0x3a00
 
+/* The 12.70 hook publishes one IDT gate, so every TSS needs its own entry. */
+#define KH_1270_NCPU             16U
+#define KH_1270_FALLBACK_OFF     0x2000U
+#define KH_1270_FALLBACK_STRIDE  0x100U
+#define KH_1270_FALLBACK_SIZE    ((KH_1270_NCPU - 1U) * KH_1270_FALLBACK_STRIDE)
+
 typedef struct {
   uint8_t *buf;
   size_t cap;
@@ -65,6 +71,7 @@ typedef struct {
 
   uint16_t kcs;
   uint64_t saved_gate_lo, saved_gate_hi, saved_ist;
+  uint64_t saved_ists[KH_1270_NCPU];
   int installed;
 
   // 1 = fire once - the resume tail clears DR7 before returning
