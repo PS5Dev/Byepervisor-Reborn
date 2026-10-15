@@ -11,6 +11,7 @@
 #include "khook.h"
 #include "util.h"
 #include "paging.h"
+#include "byepervisor_1270.h"
 
 #include "break_hv_payload/break_hv.h"
 
@@ -174,6 +175,9 @@ int main(void)
   // Do a quick firmware version detect, if we don't have offsets for it, goodbye!
   fw = kernel_get_fw_version();
   printf("[+] Detected firmware: %x.%x\n", (fw & 0xFF000000) >> 0x18, (fw & 0x00FF0000) >> 0x10);
+
+  if ((fw & 0xffff0000U) == 0x12700000U)
+    return byepervisor_1270_run();
 
   if (kdlsym(KERNEL_SYM_HV_MP_STARTUP_CALL) == 0) {
     printf("[!] Undetected firmware, exiting!\n");

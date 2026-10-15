@@ -11,26 +11,24 @@
 
 int kread(uint64_t kaddr, void *dst, size_t len)
 {
-  kernel_copyout(kaddr, dst, len);
-  return 0;
+  return kernel_copyout(kaddr, dst, len);
 }
 
 int kwrite(uint64_t kaddr, const void *src, size_t len)
 {
-  kernel_copyin(src, kaddr, len);
-  return 0;
+  return kernel_copyin(src, kaddr, len);
 }
 
 uint32_t kread32(uint64_t kaddr)
 {
-  uint32_t v;
+  uint32_t v = 0;
   kread(kaddr, &v, sizeof(v));
   return v;
 }
 
 uint64_t kread64(uint64_t kaddr)
 {
-  uint64_t v;
+  uint64_t v = 0;
   kread(kaddr, &v, sizeof(v));
   return v;
 }
@@ -60,8 +58,7 @@ int pin_to_core(int num)
   mask[1] = 0;
   cpuset_setaffinity(3, 3, new_id, 8, (const cpuset_t *) mask);
   
-  // Sony system so code that makes sense must be commented out
-  //mask[0] = (1 << num);
+  // Sony affinity bits run in reverse order from per-CPU/TSS array rows.
   mask[0] = 1 << (15 - num);
   mask[1] = 0;
   return cpuset_setaffinity(3, 1, -1, 0x10, (const cpuset_t *) mask);

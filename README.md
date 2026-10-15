@@ -6,8 +6,9 @@ PS5 hypervisor exploit for 6.xx - 13.60 firmware. Bug details can be found [here
 
 Very similarly to (one version of) [byepervisor of old](https://github.com/PS5Dev/Byepervisor), this exploits the rest mode path too :)
 
-Currently only the following firmwares are fully supported:
+The following firmware paths are available:
 
+- 12.70 (tested on launch model only)
 - 13.60
 - 13.20
 - 13.00 (untested)
@@ -34,6 +35,24 @@ However this bug should technically be exploitable as low as 6.xx. With modifica
 
 ## Build notes
 This exploit payload is built using the [PS5-Payload-Dev SDK](https://github.com/ps5-payload-dev/sdk). Note also that the build for `break_hv_payload/` is slightly special, as it gets compiled to a flat binary of minimal size. The entirety of code in `break_hv_payload/` runs in supervisor/kernel mode.
+
+### Firmware 12.70 (launch model)
+
+The default ELF selects the 12.70 path when it detects firmware 12.70:
+
+```sh
+make PS5_PAYLOAD_SDK=/path/to/ps5-payload-sdk
+```
+
+The 12.70 path was exercised as a standalone ELF on one launch-model PS5 with firmware 12.70, Relapse, and elfldr. One complete rest/resume run returned to the home screen and displayed the first eight kernel text bytes (`e8 5b c5 58 00 00 00 00`). Its USB result recorded 16 AP VMCBs processed, all 342 planned text-map leaves verified, and a successful kernel text read. The number of leaves changes with KASLR; 853 was also observed on the same console in an earlier boot. The combined ELF builds successfully but still needs a console run.
+
+The 12.70 hook now prepares isolated IST6 fallback paths for all 16 CPUs before publishing its shared debug gate. This hardening builds and passes host checks, but has not yet had a 12.70 console run. `make census_1270.elf` builds a read-only TSS, IDT, and cave preflight for that first validation.
+
+Credit to [Gabe “gzimbric” Zimbric](https://github.com/gzimbric) for diagnosing the [global debug-gate/per-CPU IST race](https://github.com/PS5Dev/Byepervisor-Reborn/issues/9) and developing and validating the [hardened 11.60 hook](https://github.com/gzimbric/Byepervisor-Reborn/commit/340ed30a455e03e9bf29662f257136f9a45d702c). The 12.70 multicore changes here adapt his design.
+
+A writable USB drive at `/mnt/usb0` is optional. When available, the 12.70 path saves a detailed resume log there. Without it, the payload continues and reports the result through its notification and kernel log.
+
+This path rejects firmware or SoC mismatches, unexpected page-table layouts, and dirty data-cave state before arming the resume hook. It leaves kernel text readable and writable after resume. It has not been tested on Slim or Pro hardware, and does not boot Linux or include kernel patches. See [PORT_12_70.md](PORT_12_70.md) for the implementation and test boundary.
 
 ## Adding firmware support
 To add support for a different firmware, the main thing that needs to be added is the header file in `include/offsets/`. This includes all the kernel offsets that are needed.

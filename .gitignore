@@ -1,4 +1,6 @@
 *.elf
 *.o
+*.bin
+/break_hv_payload/vmcb_strike_1270.h
 *~
 

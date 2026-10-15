@@ -28,7 +28,7 @@ enum pde_shift {
 #define PDE_XOTEXT_MASK                 1UL
 #define PDE_PROTECTION_KEY_MASK         0xFUL
 #define PDE_EXECUTE_DISABLE_MASK        1UL
-#define PDE_ADDR_MASK                   0xffffffffff800ULL  // bits [12, 51]
+#define PDE_ADDR_MASK                   0x000ffffffffff000ULL  // bits [12, 51]
 
 #define PDE_FIELD(pde, name)            (((pde) >> PDE_##name) & PDE_##name##_MASK)
 #define PDE_ADDR(pde)                   (pde & PDE_ADDR_MASK)
