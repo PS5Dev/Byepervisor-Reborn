@@ -48,6 +48,8 @@ The 12.70 path was exercised as a standalone ELF on one launch-model PS5 with fi
 
 The 12.70 hook now prepares isolated IST6 fallback paths for all 16 CPUs before publishing its shared debug gate. This hardening builds and passes host checks, but has not yet had a 12.70 console run. `make census_1270.elf` builds a read-only TSS, IDT, and cave preflight for that first validation.
 
+Credit to [Gabe “gzimbric” Zimbric](https://github.com/gzimbric) for diagnosing the [global debug-gate/per-CPU IST race](https://github.com/PS5Dev/Byepervisor-Reborn/issues/9) and developing and validating the [hardened 11.60 hook](https://github.com/gzimbric/Byepervisor-Reborn/commit/340ed30a455e03e9bf29662f257136f9a45d702c). The 12.70 multicore changes here adapt his design.
+
 A writable USB drive at `/mnt/usb0` is optional. When available, the 12.70 path saves a detailed resume log there. Without it, the payload continues and reports the result through its notification and kernel log.
 
 This path rejects firmware or SoC mismatches, unexpected page-table layouts, and dirty data-cave state before arming the resume hook. It leaves kernel text readable and writable after resume. It has not been tested on Slim or Pro hardware, and does not boot Linux or include kernel patches. See [PORT_12_70.md](PORT_12_70.md) for the implementation and test boundary.
