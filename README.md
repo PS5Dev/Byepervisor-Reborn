@@ -30,7 +30,7 @@ However this bug should technically be exploitable as low as 6.xx. With modifica
     - `0x8E0800000` PA for pro units
   - Open an issue if the payload mis-identifies what your system is, and note the hex value printed in brackets in the notification
 - If the system shuts down when resuming from rest mode, it means the exploit failed
-  - If it failed, likely there's something wrong with the payload and your situation is not supported, this exploit should be 99.9% stable
+  - If it failed, likely there's something wrong with the payload and your situation is not supported; this exploit should be 99.9% stable
 
 ## Build notes
 This exploit payload is built using the [PS5-Payload-Dev SDK](https://github.com/ps5-payload-dev/sdk). Note also that the build for `break_hv_payload/` is slightly special, as it gets compiled to a flat binary of minimal size. The entirety of code in `break_hv_payload/` runs in supervisor/kernel mode.
