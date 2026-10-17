@@ -19,7 +19,7 @@ uint64_t g_sym_map_1320[] = {
 };
 
 uint64_t g_gadget_map_1320[] = {
-  0x2520FE,   // KERNEL_GADGET_PIVOT_ADD_RSP28_RET  add rsp,0x28 ; rep ret
+  0x2520FE,   // KERNEL_GADGET_PIVOT_ADD_RSP28_RET  add rsp,0x28 ; ret
   0x257AFD,   // KERNEL_GADGET_IRETQ                iretq
   0x291231,   // KERNEL_GADGET_POP_RAX              pop rax ; ret
   0x291842,   // KERNEL_GADGET_POP_RCX              pop rcx ; ret
@@ -38,8 +38,8 @@ uint64_t g_gadget_map_1320[] = {
   0xBE027A,   // KERNEL_GADGET_MOV_RAX_RDI          mov rax, rdi ; ret
   0x25CFE7,   // KERNEL_GADGET_REP_MOVSB            rep movsb ; nop ; rep ret
   0x304D17,   // KERNEL_GADGET_CLD                  cld ; ret
-  0x291232,   // KERNEL_GADGET_RET_TRAMP            ret (of pop rax @0x291231)
-  0x252998,   // KERNEL_GADGET_DBREG_RESUME         resumectx DR-restore tail
+  0x291232,   // KERNEL_GADGET_RET_TRAMP            ret
+  0x252998,   // KERNEL_GADGET_DBREG_RESUME         resumectx tail
 };
 
 #endif // OFFSETS_13_20_H

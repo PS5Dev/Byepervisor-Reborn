@@ -23,12 +23,28 @@ uint64_t kgadget(kgadget_t gadget)
     return 0;
 
   switch(kernel_get_fw_version() & 0xffff0000) {
+  case 0x12000000:
+    return ktext(g_gadget_map_1200[gadget]);
+  case 0x12020000:
+    return ktext(g_gadget_map_1202[gadget]);
+  case 0x12200000:
+    return ktext(g_gadget_map_1220[gadget]);
+  case 0x12400000:
+    return ktext(g_gadget_map_1240[gadget]);
+  case 0x12600000:
+    return ktext(g_gadget_map_1260[gadget]);
+  case 0x12700000:
+    return ktext(g_gadget_map_1270[gadget]);
   case 0x13000000:
     return ktext(g_gadget_map_1300[gadget]);
   case 0x13200000:
     return ktext(g_gadget_map_1320[gadget]);
+  case 0x13400000:
+    return ktext(g_gadget_map_1340[gadget]);
+  case 0x13420000:
+    return ktext(g_gadget_map_1342[gadget]);
   case 0x13600000:
-    return ktext(g_gadget_map_1360[gadget]);    
+    return ktext(g_gadget_map_1360[gadget]);  
   default:
     return 0;
   }
@@ -41,12 +57,28 @@ uint64_t kdlsym(ksym_t sym)
     return 0;
 
   switch(kernel_get_fw_version() & 0xffff0000) {
+  case 0x12000000:
+    return ktext(g_sym_map_1200[sym]);
+  case 0x12020000:
+    return ktext(g_sym_map_1202[sym]);
+  case 0x12200000:
+    return ktext(g_sym_map_1220[sym]);
+  case 0x12400000:
+    return ktext(g_sym_map_1240[sym]);
+  case 0x12600000:
+    return ktext(g_sym_map_1260[sym]);
+  case 0x12700000:
+    return ktext(g_sym_map_1270[sym]);
   case 0x13000000:
     return ktext(g_sym_map_1300[sym]);
   case 0x13200000:
     return ktext(g_sym_map_1320[sym]);
+  case 0x13400000:
+    return ktext(g_sym_map_1340[sym]);
+  case 0x13420000:
+    return ktext(g_sym_map_1342[sym]);
   case 0x13600000:
-    return ktext(g_sym_map_1360[sym]);    
+    return ktext(g_sym_map_1360[sym]);     
   default:
     return 0;
   }
@@ -59,12 +91,28 @@ uint64_t rawoff(ksym_t sym)
     return 0;
 
   switch(kernel_get_fw_version() & 0xffff0000) {
+  case 0x12000000:
+    return g_sym_map_1200[sym];
+  case 0x12020000:
+    return g_sym_map_1202[sym];
+  case 0x12200000:
+    return g_sym_map_1220[sym];
+  case 0x12400000:
+    return g_sym_map_1240[sym];
+  case 0x12600000:
+    return g_sym_map_1260[sym];
+  case 0x12700000:
+    return g_sym_map_1270[sym];
   case 0x13000000:
     return g_sym_map_1300[sym];
   case 0x13200000:
     return g_sym_map_1320[sym];
+  case 0x13400000:
+    return g_sym_map_1340[sym];
+  case 0x13420000:
+    return g_sym_map_1342[sym];
   case 0x13600000:
-    return g_sym_map_1360[sym];    
+    return g_sym_map_1360[sym];  
   default:
     return 0;
   }
