@@ -8,9 +8,12 @@ Very similarly to (one version of) [byepervisor of old](https://github.com/PS5De
 
 Currently only the following firmwares are fully supported:
 
+- 12.70 (reported working on regular and Pro consoles)
 - 13.60
 - 13.20
 - 13.00 (untested)
+
+The 12.70 offset table is based on [EchoStretch's port](https://github.com/EchoStretch/Byepervisor-Reborn). It uses the same generic resume and hypervisor payload as the other supported firmwares.
 
 However this bug should technically be exploitable as low as 6.xx. With modifications, it could work on 14.00 as well, but this is not provided here, especially since there is no public 14.00 kernel exploit anyways.
 
@@ -48,4 +51,4 @@ Some firmwares might require more extensive modifications if gadgets don't exist
 ## How to use
 1. Run kernel exploit chain and get to elfldr
 2. Send `byepervisor.elf`
-3. Follow the directions of the notifications
+3. The payload enters rest mode after a three-second notification; resume the console normally.
