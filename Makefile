@@ -28,14 +28,14 @@ ELF := byepervisor_reborn.elf
 PAYLOAD_DIR := break_hv_payload
 PAYLOAD_HDR := $(PAYLOAD_DIR)/break_hv.h
 
-CFLAGS := -Wall -Werror -Wno-unused-function -g -I./include
+CFLAGS := -Wall -Werror -Wno-unused-function -g -O0 -I./include
 
 all: $(ELF)
 
 $(PAYLOAD_HDR): $(PAYLOAD_DIR)/break_hv.c $(PAYLOAD_DIR)/entry.S $(PAYLOAD_DIR)/link.ld
 	sh $(PAYLOAD_DIR)/build.sh
 
-$(ELF): $(PAYLOAD_HDR) main.c kdlsym.c khook.c paging.c util.c
+$(ELF): $(PAYLOAD_HDR) main.c kdlsym.c khook.c paging.c util.c resume_hook_1160.c
 	$(CC) $(CFLAGS) -o $@ $(filter %.c,$^)
 
 clean:
@@ -53,3 +53,6 @@ debug: $(ELF)
 	-ex "remote put $(ELF) /data/$(ELF)" \
 	-ex "set remote exec-file /data/$(ELF)" \
 	-ex "start"
+
+audit-11.60: $(ELF)
+	python3 scripts/audit_11_60.py --objdump "$${OBJDUMP:-llvm-objdump}"
