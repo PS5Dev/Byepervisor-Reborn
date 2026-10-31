@@ -28,14 +28,18 @@ ELF := byepervisor_reborn.elf
 PAYLOAD_DIR := break_hv_payload
 PAYLOAD_HDR := $(PAYLOAD_DIR)/break_hv.h
 
-CFLAGS := -Wall -Werror -Wno-unused-function -g -I./include -lSceSystemService
+DUMP_HV     ?= 0
+DUMP_KERNEL ?= 0
+
+CFLAGS := -Wall -Werror -Wno-unused-function -Wno-unused-const-variable -g -I./include -lSceSystemService \
+          -DDUMP_HV=$(DUMP_HV) -DDUMP_KERNEL=$(DUMP_KERNEL)
 
 all: $(ELF)
 
 $(PAYLOAD_HDR): $(PAYLOAD_DIR)/break_hv.c $(PAYLOAD_DIR)/entry.S $(PAYLOAD_DIR)/link.ld
 	sh $(PAYLOAD_DIR)/build.sh
 
-$(ELF): $(PAYLOAD_HDR) main.c kdlsym.c khook.c paging.c util.c
+$(ELF): $(PAYLOAD_HDR) main.c kdlsym.c khook.c paging.c util.c dump.c
 	$(CC) $(CFLAGS) -o $@ $(filter %.c,$^)
 
 clean:
