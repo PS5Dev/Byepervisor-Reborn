@@ -11,6 +11,7 @@
 #include "khook.h"
 #include "util.h"
 #include "paging.h"
+#include "dump.h"
 
 #include "break_hv_payload/break_hv.h"
 
@@ -27,6 +28,7 @@
 #define HV_LOADER_PA_PRO          0x8e0800000
 
 uint64_t g_hv_base_pa;
+int sceSystemStateMgrEnterStandby(void);
 
 static int install_test_hook(int core_id, uint64_t cave)
 {
@@ -173,7 +175,7 @@ int main(void)
 
   // Do a quick firmware version detect, if we don't have offsets for it, goodbye!
   fw = kernel_get_fw_version();
-  printf("[+] Detected firmware: %x.%x\n", (fw & 0xFF000000) >> 0x18, (fw & 0x00FF0000) >> 0x10);
+  printf("[+] Detected firmware: %x.%02x\n", (fw & 0xFF000000) >> 0x18, (fw & 0x00FF0000) >> 0x10);
 
   if (kdlsym(KERNEL_SYM_HV_MP_STARTUP_CALL) == 0) {
     printf("[!] Undetected firmware, exiting!\n");
@@ -205,6 +207,24 @@ int main(void)
 #if DEBUG_MP_STARTUP_PAYLOAD == 0
   if (kread64(oracle) != 0) {
     printf("Hypervisor is already compromised\n");
+
+#if DUMP_KERNEL
+    {
+      char kpath[64];
+      snprintf(kpath, sizeof(kpath), "/data/%x.%02x_kernel_%lx.bin",
+               (fw >> 24) & 0xff, (fw >> 16) & 0xff, ktext(0));
+      dump_kernel_text(kpath);
+    }
+#endif
+#if DUMP_HV
+    {
+      char hvpath[64];
+      snprintf(hvpath, sizeof(hvpath), "/data/%x.%02x_hv_%lx.elf",
+               (fw >> 24) & 0xff, (fw >> 16) & 0xff, g_hv_base_pa + HV_ELF_OFF);
+      dump_hv_image(hvpath);
+    }
+#endif
+
     printf("Here's a dump of kernel .text base (xotext defeated)!\n");
     kHexDump(ktext(0), 0x60);
 
@@ -221,6 +241,7 @@ int main(void)
     notifyf("Byepervisor - Kernel .text first 8 bytes\n%02x %02x %02x %02x %02x %02x %02x %02x", 
       test_val_bytes[0], test_val_bytes[1], test_val_bytes[2], test_val_bytes[3], 
       test_val_bytes[4], test_val_bytes[5], test_val_bytes[6], test_val_bytes[7]);
+	  
 
     return 0;
   }
@@ -318,7 +339,9 @@ int main(void)
     }
 
     printf("[+] Hook installed, enter sleep and resume!\n");
-    notifyf("Byepervisor Reborn\nEnter sleep and resume!\n");
+    notifyf("Byepervisor Reborn\nEntering rest mode in 3 secs\n");
+    sleep(3);
+    sceSystemStateMgrEnterStandby();
   } else {
     printf("khook: hook already ARMED (state survived)\n");
   }
